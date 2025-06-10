@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">NATIVE GUITAR TUNER</string>
+    <string name="mic_attribution_label">Tuning your guitar</string>
+</resources>
