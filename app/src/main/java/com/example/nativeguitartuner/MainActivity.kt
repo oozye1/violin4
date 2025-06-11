@@ -72,7 +72,6 @@ class MainActivity : ComponentActivity() {
         private const val SPECTROGRAPH_HISTORY_SIZE = 100
     }
 
-    // --- State Variables ---
     private var isRecording by mutableStateOf(false)
     private var detectedNote by mutableStateOf("--")
     private var frequencyText by mutableStateOf("0.00 Hz")
@@ -96,13 +95,16 @@ class MainActivity : ComponentActivity() {
     private var waveformData by mutableStateOf(floatArrayOf())
     private var spectrographHistory by mutableStateOf<List<FloatArray>>(emptyList())
 
-    // --- Skin State and Lists ---
+    // --- Skin State and Lists (UPDATED) ---
     private var selectedPedal by mutableStateOf(R.drawable.doom)
     private var selectedVDU by mutableStateOf(R.drawable.dial)
 
     private val pedalImages = listOf(
         R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2,
-        R.drawable.punk, R.drawable.taj, R.drawable.doom, R.drawable.dovercastle, R.drawable.gothic, R.drawable.alien
+        R.drawable.punk, R.drawable.taj, R.drawable.doom, R.drawable.dovercastle, R.drawable.gothic, R.drawable.alien,
+        R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
+        R.drawable.usa, R.drawable.spacerock, R.drawable.acrylic, R.drawable.horse,
+        R.drawable.stoner, R.drawable.surf
     )
     private val vduImages = listOf(R.drawable.dial2, R.drawable.dial3, R.drawable.dial4, R.drawable.dial)
 
