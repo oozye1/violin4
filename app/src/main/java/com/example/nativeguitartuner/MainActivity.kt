@@ -55,7 +55,7 @@ import kotlin.math.log2
 
 // Removed STROBE and RADIAL_BARS (assuming 'circle visualisations' refers to Radial Bars)
 enum class VisualizerMode {
-    NONE, BARS, WAVEFORM, SPECTROGRAPH
+    NONE, BARS, WAVEFORM
 }
 
 class MainActivity : ComponentActivity() {
@@ -70,7 +70,6 @@ class MainActivity : ComponentActivity() {
         private const val PITCH_BUFFER_SIZE = 5
         private const val IN_TUNE_DELAY_MS = 2500L
         private const val IN_TUNE_CENTS_THRESHOLD = 3.0f
-        private const val SPECTROGRAPH_HISTORY_SIZE = 100
     }
 
     // State Variables
@@ -92,7 +91,6 @@ class MainActivity : ComponentActivity() {
     private var visualizerMode by mutableStateOf(VisualizerMode.BARS)
     private var magnitudes by mutableStateOf(floatArrayOf())
     private var waveformData by mutableStateOf(floatArrayOf())
-    private var spectrographHistory by mutableStateOf<List<FloatArray>>(emptyList())
     private var soundsLoaded by mutableStateOf(false)
 
     // Audio Processing and System
@@ -270,7 +268,7 @@ class MainActivity : ComponentActivity() {
                 private val amplitudes = FloatArray(fftSize)
                 override fun process(audioEvent: AudioEvent): Boolean {
                     val audioBuffer = audioEvent.floatBuffer; val waveformUpdate = audioBuffer.clone(); val transformBuffer = audioBuffer.clone(); fft.forwardTransform(transformBuffer); fft.modulus(transformBuffer, amplitudes)
-                    activityScope.launch { waveformData = waveformUpdate; val newMagnitudes = amplitudes.copyOf(fftSize / 2); magnitudes = newMagnitudes; val newHistory = (listOf(newMagnitudes) + spectrographHistory).take(SPECTROGRAPH_HISTORY_SIZE); spectrographHistory = newHistory }
+                    activityScope.launch { waveformData = waveformUpdate; val newMagnitudes = amplitudes.copyOf(fftSize / 2); magnitudes = newMagnitudes }
                     return true
                 }
                 override fun processingFinished() {}
@@ -308,7 +306,6 @@ class MainActivity : ComponentActivity() {
         statusColor = Color.White
         waveformData = floatArrayOf()
         magnitudes = floatArrayOf()
-        spectrographHistory = emptyList()
     }
 
     private fun updatePitch(pitch: Float) {
@@ -428,13 +425,11 @@ class MainActivity : ComponentActivity() {
         when(visualizerMode){
             VisualizerMode.BARS->BarsVisualizer(Modifier.fillMaxSize(),magnitudes)
             VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(),waveformData)
-            VisualizerMode.SPECTROGRAPH->SpectrographVisualizer(Modifier.fillMaxSize(),spectrographHistory)
             VisualizerMode.NONE->{Text("No Visualizer",color=Color.Gray,fontSize=12.sp)}
         }
     };Spacer(Modifier.height(8.dp));Button(onClick={val allModes=VisualizerMode.entries;val currentIndex=allModes.indexOf(visualizerMode);val nextIndex=(currentIndex+1)%allModes.size;visualizerMode=allModes[nextIndex]}){val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()};Text("Visualizer: $vizName")}}}
     @Composable fun BarsVisualizer(modifier:Modifier=Modifier,magnitudes:FloatArray){Canvas(modifier=modifier){if(magnitudes.isNotEmpty()){val barCount=magnitudes.size/2;val barWidth=size.width/barCount;val maxMagnitude=(magnitudes.maxOrNull()?:1f).coerceAtLeast(0.5f);magnitudes.take(barCount).forEachIndexed{index,mag->val normalizedHeight=(mag/maxMagnitude).coerceIn(0f,1f);val barHeight=normalizedHeight*size.height;val color=lerp(Color.Green,Color.Red,normalizedHeight);drawRect(color=color,topLeft=Offset(x=index*barWidth,y=size.height-barHeight),size=Size(width=barWidth*0.8f,height=barHeight))}}}}
     @Composable fun WaveformVisualizer(modifier:Modifier=Modifier,data:FloatArray){Canvas(modifier=modifier){if(data.isNotEmpty()){val path=Path();val stepX=size.width/data.size;path.moveTo(0f,size.height/2);data.forEachIndexed{index,value->path.lineTo(index*stepX,(size.height/2)*(1-value))};drawPath(path=path,color=Color.Green,style=Stroke(width=2f))}}}
-    @Composable fun SpectrographVisualizer(modifier:Modifier=Modifier,history:List<FloatArray>){Canvas(modifier=modifier){if(history.isNotEmpty()&&history.first().isNotEmpty()){val historySize=history.size;val fftSize=history.first().size;val cellHeight=size.height/historySize;val cellWidth=size.width/fftSize;history.forEachIndexed{yIndex,magnitudes->if(magnitudes.isNotEmpty()){val maxMag=(magnitudes.maxOrNull()?:1f).coerceAtLeast(0.1f);magnitudes.forEachIndexed{xIndex,mag->val normalizedMag=((mag/maxMag).coerceIn(0f,1f));val color=lerp(Color.Black,Color.Yellow,normalizedMag);drawRect(color=color,topLeft=Offset(x=xIndex*cellWidth,y=(size.height - (yIndex+1)*cellHeight)),size=Size(cellWidth,cellHeight))}}}}}}
     // Removed @Composable fun RadialBarsVisualizer(...)
     // Removed @Composable fun StrobeVisualizer(...)
     @Composable fun LedTuningStrip(activeLedIndex:Int){Row(modifier=Modifier.shadow(elevation=8.dp,shape=RoundedCornerShape(6.dp),spotColor=Color.Green),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){(-5..5).forEach{index->val isActive=when{activeLedIndex<0->index>=activeLedIndex&&index<0;activeLedIndex>0->index<=activeLedIndex&&index>0;else->index==0};val color=when{index==0->Color(0xFF00C853);abs(index)in 1..2->Color(0xFFFFFF00);else->Color(0xFFD50000)};LedIndicator(isActive=isActive,activeColor=color);if(index<5){Spacer(modifier=Modifier.width(2.dp))}}}}
