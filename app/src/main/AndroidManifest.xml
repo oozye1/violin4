@@ -16,6 +16,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.NATIVEGUITARTUNER"> <!-- Make sure Theme.SimpleTuner matches your theme name -->
         <activity
+            android:screenOrientation="portrait"
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
