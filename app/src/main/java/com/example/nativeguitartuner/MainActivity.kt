@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         private const val PREF_VDU_SKIN = "vdu_skin"
     }
 
-    // State Variables - Using primitive-specific state holders for performance
+    // State Variables
     private var isRecording by mutableStateOf(false)
     private var detectedNote by mutableStateOf("--")
     private var frequencyText by mutableStateOf("0.00 Hz")
@@ -232,7 +232,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Suppress("DEPRECATION") // Suppress warning for older but functional permission handling
+    @Suppress("DEPRECATION")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
@@ -316,7 +316,6 @@ class MainActivity : ComponentActivity() {
             cents = 1200f * log2(stablePitch / noteFreq)
             rotationAngle = (cents.coerceIn(-50f, 50f) / 50f) * 90f
             detectedNote = noteName
-            // Use Locale.US to ensure a period is always used as the decimal separator
             frequencyText = String.format(Locale.US, "%.2f Hz", stablePitch)
             val isInTune = abs(cents) <= IN_TUNE_CENTS_THRESHOLD
             if(isInTune) {
@@ -382,28 +381,46 @@ class MainActivity : ComponentActivity() {
         selectedPedal = newPedal
         selectedVDU = newVdu
 
-        // Use the KTX extension function for cleaner SharedPreferences editing
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
             putInt(PREF_PEDAL_SKIN, newPedal)
             putInt(PREF_VDU_SKIN, newVdu)
         }
     }
 
+    // --- MODIFIED: Removed the Surface and changed button colors ---
     @Composable
     fun BottomControls() {
-        Surface(modifier = Modifier.fillMaxWidth(), color = Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
-            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Note: $detectedNote", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
-                Text(text = frequencyText, fontSize = 16.sp, color = Color.LightGray, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 6f)))
-                Text(text = statusText, fontSize = 20.sp, color = statusColor, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
-                Spacer(modifier = Modifier.height(16.dp))
-                AudioVisualizer()
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { if (isRecording) stopTuner() else requestPermissionAndStartTuner() }) {
-                        Text(if (isRecording) "Stop" else "Start")
-                    }
-                    Button(onClick = { randomizeSkins() }) { Text("Skin") }
+        // The Surface wrapper has been removed. The Column is now the top-level composable.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Note: $detectedNote", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
+            Text(text = frequencyText, fontSize = 16.sp, color = Color.LightGray, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 6f)))
+            Text(text = statusText, fontSize = 20.sp, color = statusColor, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
+            Spacer(modifier = Modifier.height(16.dp))
+            AudioVisualizer()
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = { if (isRecording) stopTuner() else requestPermissionAndStartTuner() },
+                    colors = ButtonDefaults.buttonColors( // Set button colors here
+                        containerColor = Color.Black,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(if (isRecording) "Stop" else "Start")
+                }
+                Button(
+                    onClick = { randomizeSkins() },
+                    colors = ButtonDefaults.buttonColors( // Set button colors here
+                        containerColor = Color.Black,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Skin")
                 }
             }
         }
@@ -436,11 +453,10 @@ class MainActivity : ComponentActivity() {
             VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(),waveformData)
             VisualizerMode.NONE->{Text("No Visualizer",color=Color.Gray,fontSize=12.sp)}
         }
-    };Spacer(Modifier.height(8.dp));Button(onClick={val allModes=VisualizerMode.entries;val currentIndex=allModes.indexOf(visualizerMode);val nextIndex=(currentIndex+1)%allModes.size;visualizerMode=allModes[nextIndex]}){val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()};Text("Visualizer: $vizName")}}}
+    };Spacer(Modifier.height(8.dp));Button(onClick={val allModes=VisualizerMode.entries;val currentIndex=allModes.indexOf(visualizerMode);val nextIndex=(currentIndex+1)%allModes.size;visualizerMode=allModes[nextIndex]}, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)){val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()};Text("Visualizer: $vizName")}}}
     @Composable fun BarsVisualizer(modifier:Modifier=Modifier,magnitudes:FloatArray){Canvas(modifier=modifier){if(magnitudes.isNotEmpty()){val barCount=magnitudes.size/2;val barWidth=size.width/barCount;val maxMagnitude=(magnitudes.maxOrNull()?:1f).coerceAtLeast(0.5f);magnitudes.take(barCount).forEachIndexed{index,mag->val normalizedHeight=(mag/maxMagnitude).coerceIn(0f,1f);val barHeight=normalizedHeight*size.height;val color=lerp(Color.Green,Color.Red,normalizedHeight);drawRect(color=color,topLeft=Offset(x=index*barWidth,y=size.height-barHeight),size=Size(width=barWidth*0.8f,height=barHeight))}}}}
     @Composable fun WaveformVisualizer(modifier:Modifier=Modifier,data:FloatArray){Canvas(modifier=modifier){if(data.isNotEmpty()){val path=Path();val stepX=size.width/data.size;path.moveTo(0f,size.height/2);data.forEachIndexed{index,value->path.lineTo(index*stepX,(size.height/2)*(1-value))};drawPath(path=path,color=Color.Green,style=Stroke(width=2f))}}}
     @Composable fun LedTuningStrip(activeLedIndex:Int){Row(modifier=Modifier.shadow(elevation=8.dp,shape=RoundedCornerShape(6.dp),spotColor=Color.Green),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){(-5..5).forEach{index->
-        // Use more readable range checks
         val isActive = when {
             activeLedIndex < 0 -> index in activeLedIndex until 0
             activeLedIndex > 0 -> index in 1..activeLedIndex
