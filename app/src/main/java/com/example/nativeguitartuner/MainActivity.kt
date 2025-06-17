@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.AudioEvent
 import be.tarsos.dsp.AudioProcessor
@@ -51,6 +52,7 @@ import be.tarsos.dsp.pitch.PitchDetectionHandler
 import be.tarsos.dsp.pitch.PitchProcessor
 import be.tarsos.dsp.util.fft.FFT
 import kotlinx.coroutines.*
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.log2
 
@@ -71,31 +73,33 @@ class MainActivity : ComponentActivity() {
         private const val IN_TUNE_DELAY_MS = 2500L
         private const val IN_TUNE_CENTS_THRESHOLD = 3.0f
 
-        // --- NEW: Constants for SharedPreferences ---
         private const val PREFS_NAME = "TunerPrefs"
         private const val PREF_PEDAL_SKIN = "pedal_skin"
         private const val PREF_VDU_SKIN = "vdu_skin"
     }
 
-    // State Variables
+    // State Variables - Using primitive-specific state holders for performance
     private var isRecording by mutableStateOf(false)
     private var detectedNote by mutableStateOf("--")
     private var frequencyText by mutableStateOf("0.00 Hz")
     private var statusText by mutableStateOf("Press Start to Tune")
     private var statusColor by mutableStateOf(Color.White)
-    private var rotationAngle by mutableStateOf(0f)
-    private var smoothedAngle by mutableStateOf(0f)
+    private var rotationAngle by mutableFloatStateOf(0f)
+    private var smoothedAngle by mutableFloatStateOf(0f)
     private var voiceModeEnabled by mutableStateOf(false)
-    private var cents by mutableStateOf(0.0f)
+    private var cents by mutableFloatStateOf(0.0f)
     private val activeLedIndex by derivedStateOf { (cents / 10f).coerceIn(-5f, 5f).toInt() }
     private var isMetronomeRunning by mutableStateOf(false)
-    private var tempo by mutableStateOf(120)
-    private var timeSignatureIndex by mutableStateOf(0)
+    private var tempo by mutableIntStateOf(120)
+    private var timeSignatureIndex by mutableIntStateOf(0)
     private var metronomeJob: Job? = null
     private var visualizerMode by mutableStateOf(VisualizerMode.BARS)
     private var magnitudes by mutableStateOf(floatArrayOf())
     private var waveformData by mutableStateOf(floatArrayOf())
     private var soundsLoaded by mutableStateOf(false)
+    private var selectedPedal by mutableIntStateOf(R.drawable.red)
+    private var selectedVDU by mutableIntStateOf(R.drawable.dial)
+
 
     // Audio Processing and System
     private var dispatcher: AudioDispatcher? = null
@@ -112,8 +116,6 @@ class MainActivity : ComponentActivity() {
     private var inTuneSoundPlayed = false
 
     // App Resources
-    private lateinit var selectedPedal: MutableState<Int>
-    private lateinit var selectedVDU: MutableState<Int>
     private lateinit var pedalImages: List<Int>
     private lateinit var vduImages: List<Int>
     private lateinit var timeSignatures: List<String>
@@ -122,14 +124,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // --- NEW: Load saved skins from SharedPreferences ---
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedPedalId = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.red)
-        val savedVduId = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
+        selectedPedal = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.red)
+        selectedVDU = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
 
-        // Initialize resources, using the loaded values
-        selectedPedal = mutableStateOf(savedPedalId)
-        selectedVDU = mutableStateOf(savedVduId)
+        // Initialize resources
         pedalImages = listOf(
             R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj, R.drawable.doom,
             R.drawable.dovercastle, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
@@ -153,7 +152,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        Image(painter = painterResource(id = selectedPedal.value), contentDescription = null, modifier = Modifier.fillMaxSize())
+                        Image(painter = painterResource(id = selectedPedal), contentDescription = null, modifier = Modifier.fillMaxSize())
                         Box(modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp)) {
                             MetronomeControls(enabled = soundsLoaded)
                         }
@@ -163,7 +162,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             LedTuningStrip(activeLedIndex = activeLedIndex)
                             Image(
-                                painter = painterResource(id = selectedVDU.value),
+                                painter = painterResource(id = selectedVDU),
                                 contentDescription = null,
                                 modifier = Modifier.size(280.dp)
                             )
@@ -198,7 +197,7 @@ class MainActivity : ComponentActivity() {
         var loadedCount = 0
         val totalSounds = 4
         soundPool.setOnLoadCompleteListener { _, _, status ->
-            if (status == 0) { // Success
+            if (status == 0) {
                 loadedCount++
                 if (loadedCount == totalSounds) {
                     activityScope.launch {
@@ -223,27 +222,23 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() { super.onDestroy(); soundPool.release(); activityScope.cancel() }
 
     private fun requestPermissionAndStartTuner() {
-        Log.d(TAG, "requestPermissionAndStartTuner called.")
         when {
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> {
-                Log.d(TAG, "Permission already granted. Starting tuner.")
                 activityScope.launch { startTuner() }
             }
             else -> {
-                Log.d(TAG, "Permission not granted. Requesting permission now.")
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO_PERMISSION)
             }
         }
     }
 
+    @Suppress("DEPRECATION") // Suppress warning for older but functional permission handling
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "Permission granted by user.")
                 activityScope.launch { startTuner() }
             } else {
-                Log.w(TAG, "Permission denied by user.")
                 statusText = "Permission Denied"
                 statusColor = Color.Red
                 Toast.makeText(this, "Microphone permission is required for the tuner to work.", Toast.LENGTH_LONG).show()
@@ -321,7 +316,8 @@ class MainActivity : ComponentActivity() {
             cents = 1200f * log2(stablePitch / noteFreq)
             rotationAngle = (cents.coerceIn(-50f, 50f) / 50f) * 90f
             detectedNote = noteName
-            frequencyText = String.format("%.2f Hz", stablePitch)
+            // Use Locale.US to ensure a period is always used as the decimal separator
+            frequencyText = String.format(Locale.US, "%.2f Hz", stablePitch)
             val isInTune = abs(cents) <= IN_TUNE_CENTS_THRESHOLD
             if(isInTune) {
                 statusText = "$noteName (In Tune)"
@@ -363,7 +359,7 @@ class MainActivity : ComponentActivity() {
         if(isMetronomeRunning || !soundsLoaded) return
         isMetronomeRunning = true
         metronomeJob = activityScope.launch(Dispatchers.Default) {
-            while(isActive) { // Use isActive from the coroutine scope
+            while(isActive) {
                 withContext(Dispatchers.Main) {
                     soundPool.play(soundTick, 1f, 1f, 0, 0, 1f)
                 }
@@ -380,19 +376,17 @@ class MainActivity : ComponentActivity() {
 
     private fun getNearestNoteFrequency(pitch: Float): Pair<Float, String>? = noteFrequencies.minByOrNull { abs(pitch - it.first) }
 
-    // --- MODIFIED: Save the new skins to SharedPreferences ---
     private fun randomizeSkins() {
         val newPedal = pedalImages.random()
         val newVdu = vduImages.random()
-        selectedPedal.value = newPedal
-        selectedVDU.value = newVdu
+        selectedPedal = newPedal
+        selectedVDU = newVdu
 
-        // Save the new IDs to SharedPreferences
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putInt(PREF_PEDAL_SKIN, newPedal)
-            .putInt(PREF_VDU_SKIN, newVdu)
-            .apply()
+        // Use the KTX extension function for cleaner SharedPreferences editing
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            putInt(PREF_PEDAL_SKIN, newPedal)
+            putInt(PREF_VDU_SKIN, newVdu)
+        }
     }
 
     @Composable
@@ -445,7 +439,14 @@ class MainActivity : ComponentActivity() {
     };Spacer(Modifier.height(8.dp));Button(onClick={val allModes=VisualizerMode.entries;val currentIndex=allModes.indexOf(visualizerMode);val nextIndex=(currentIndex+1)%allModes.size;visualizerMode=allModes[nextIndex]}){val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()};Text("Visualizer: $vizName")}}}
     @Composable fun BarsVisualizer(modifier:Modifier=Modifier,magnitudes:FloatArray){Canvas(modifier=modifier){if(magnitudes.isNotEmpty()){val barCount=magnitudes.size/2;val barWidth=size.width/barCount;val maxMagnitude=(magnitudes.maxOrNull()?:1f).coerceAtLeast(0.5f);magnitudes.take(barCount).forEachIndexed{index,mag->val normalizedHeight=(mag/maxMagnitude).coerceIn(0f,1f);val barHeight=normalizedHeight*size.height;val color=lerp(Color.Green,Color.Red,normalizedHeight);drawRect(color=color,topLeft=Offset(x=index*barWidth,y=size.height-barHeight),size=Size(width=barWidth*0.8f,height=barHeight))}}}}
     @Composable fun WaveformVisualizer(modifier:Modifier=Modifier,data:FloatArray){Canvas(modifier=modifier){if(data.isNotEmpty()){val path=Path();val stepX=size.width/data.size;path.moveTo(0f,size.height/2);data.forEachIndexed{index,value->path.lineTo(index*stepX,(size.height/2)*(1-value))};drawPath(path=path,color=Color.Green,style=Stroke(width=2f))}}}
-    @Composable fun LedTuningStrip(activeLedIndex:Int){Row(modifier=Modifier.shadow(elevation=8.dp,shape=RoundedCornerShape(6.dp),spotColor=Color.Green),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){(-5..5).forEach{index->val isActive=when{activeLedIndex<0->index>=activeLedIndex&&index<0;activeLedIndex>0->index<=activeLedIndex&&index>0;else->index==0};val color=when{index==0->Color(0xFF00C853);abs(index)in 1..2->Color(0xFFFFFF00);else->Color(0xFFD50000)};LedIndicator(isActive=isActive,activeColor=color);if(index<5){Spacer(modifier=Modifier.width(2.dp))}}}}
+    @Composable fun LedTuningStrip(activeLedIndex:Int){Row(modifier=Modifier.shadow(elevation=8.dp,shape=RoundedCornerShape(6.dp),spotColor=Color.Green),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){(-5..5).forEach{index->
+        // Use more readable range checks
+        val isActive = when {
+            activeLedIndex < 0 -> index in activeLedIndex until 0
+            activeLedIndex > 0 -> index in 1..activeLedIndex
+            else -> index == 0
+        }
+        val color=when{index==0->Color(0xFF00C853);abs(index)in 1..2->Color(0xFFFFFF00);else->Color(0xFFD50000)};LedIndicator(isActive=isActive,activeColor=color);if(index<5){Spacer(modifier=Modifier.width(2.dp))}}}}
     @Composable fun LedIndicator(isActive:Boolean,activeColor:Color){val color=if(isActive)activeColor else Color.DarkGray.copy(alpha=0.5f);Box(modifier=Modifier.size(width=20.dp,height=24.dp).background(color,shape=RoundedCornerShape(4.dp)).border(width=1.dp,color=Color.Black.copy(alpha=0.3f),shape=RoundedCornerShape(4.dp)))}
 
 }
