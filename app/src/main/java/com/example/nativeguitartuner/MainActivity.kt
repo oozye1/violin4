@@ -51,6 +51,7 @@ import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchDetectionHandler
 import be.tarsos.dsp.pitch.PitchProcessor
 import be.tarsos.dsp.util.fft.FFT
+import com.google.android.gms.ads.MobileAds
 import kotlinx.coroutines.*
 import java.util.Locale
 import kotlin.math.abs
@@ -124,14 +125,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        Thread {
+            MobileAds.initialize(this) {}
+        }.start()
+
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        selectedPedal = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.red)
+        // --- FIXED: Use the new filename `dovercastle1` as the default ---
+        selectedPedal = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.dovercastle1)
         selectedVDU = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
 
         // Initialize resources
         pedalImages = listOf(
             R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj, R.drawable.doom,
-            R.drawable.dovercastle, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
+            // --- FIXED: Use the new filename `dovercastle1` in the list ---
+            R.drawable.dovercastle1, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
             R.drawable.usa, R.drawable.spacerock, R.drawable.acrylic, R.drawable.horse, R.drawable.stoner, R.drawable.surf,
             R.drawable.red, R.drawable.yellow, R.drawable.black, R.drawable.green, R.drawable.cats, R.drawable.wolf, R.drawable.sunflowers
         )
@@ -387,10 +394,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- MODIFIED: Removed the Surface and changed button colors ---
     @Composable
     fun BottomControls() {
-        // The Surface wrapper has been removed. The Column is now the top-level composable.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -406,7 +411,7 @@ class MainActivity : ComponentActivity() {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = { if (isRecording) stopTuner() else requestPermissionAndStartTuner() },
-                    colors = ButtonDefaults.buttonColors( // Set button colors here
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Black,
                         contentColor = Color.White
                     )
@@ -415,7 +420,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Button(
                     onClick = { randomizeSkins() },
-                    colors = ButtonDefaults.buttonColors( // Set button colors here
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Black,
                         contentColor = Color.White
                     )
