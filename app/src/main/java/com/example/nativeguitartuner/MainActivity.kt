@@ -1,5 +1,8 @@
 package com.example.nativeguitartuner
-
+import android.view.LayoutInflater
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -34,11 +37,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -51,7 +57,10 @@ import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchDetectionHandler
 import be.tarsos.dsp.pitch.PitchProcessor
 import be.tarsos.dsp.util.fft.FFT
-import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.*
+import com.google.android.gms.ads.nativead.NativeAd
+import com.google.android.gms.ads.nativead.NativeAdOptions
+import com.google.android.gms.ads.nativead.NativeAdView
 import kotlinx.coroutines.*
 import java.util.Locale
 import kotlin.math.abs
@@ -78,6 +87,9 @@ class MainActivity : ComponentActivity() {
         private const val PREF_PEDAL_SKIN = "pedal_skin"
         private const val PREF_VDU_SKIN = "vdu_skin"
     }
+
+    // --- NEW: Ad state variable ---
+    private var nativeAd by mutableStateOf<NativeAd?>(null)
 
     // State Variables
     private var isRecording by mutableStateOf(false)
@@ -125,19 +137,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        Thread {
-            MobileAds.initialize(this) {}
-        }.start()
+        // --- MODIFIED: Ad initialization and loading ---
+        MobileAds.initialize(this) {}
+        loadAd()
 
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        // --- FIXED: Use the new filename `dovercastle1` as the default ---
         selectedPedal = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.dovercastle1)
         selectedVDU = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
 
         // Initialize resources
         pedalImages = listOf(
             R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj, R.drawable.doom,
-            // --- FIXED: Use the new filename `dovercastle1` in the list ---
             R.drawable.dovercastle1, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
             R.drawable.usa, R.drawable.spacerock, R.drawable.acrylic, R.drawable.horse, R.drawable.stoner, R.drawable.surf,
             R.drawable.red, R.drawable.yellow, R.drawable.black, R.drawable.green, R.drawable.cats, R.drawable.wolf, R.drawable.sunflowers
@@ -191,6 +201,28 @@ class MainActivity : ComponentActivity() {
         activityScope.launch { while (isActiveTuner) { delay(16); val smoothing = 0.1f; smoothedAngle += (rotationAngle - smoothedAngle) * smoothing } }
     }
 
+    // --- NEW: Function to load the ad ---
+    private fun loadAd() {
+        val adUnitId = getString(R.string.native_ad_unit_id)
+        val adLoader = AdLoader.Builder(this, adUnitId)
+            .forNativeAd { ad: NativeAd ->
+                // Ad loaded successfully, update the state
+                nativeAd = ad
+                Log.d(TAG, "Native ad loaded successfully.")
+            }
+            .withAdListener(object : AdListener() {
+                override fun onAdFailedToLoad(adError: LoadAdError) {
+                    // Handle the failure.
+                    Log.e(TAG, "Ad failed to load: ${adError.message}")
+                    nativeAd = null // Clear any old ad
+                }
+            })
+            .withNativeAdOptions(NativeAdOptions.Builder().build())
+            .build()
+
+        adLoader.loadAd(AdRequest.Builder().build())
+    }
+
     private fun setupSoundPool() {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
@@ -226,7 +258,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() { super.onStart(); isActiveTuner = true }
     override fun onStop() { super.onStop(); isActiveTuner = false; stopMetronome() }
-    override fun onDestroy() { super.onDestroy(); soundPool.release(); activityScope.cancel() }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        nativeAd?.destroy() // Important: destroy the ad to free up resources
+        soundPool.release()
+        activityScope.cancel()
+    }
 
     private fun requestPermissionAndStartTuner() {
         when {
@@ -402,6 +440,13 @@ class MainActivity : ComponentActivity() {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // --- NEW: Display the ad if it's loaded ---
+            val ad = nativeAd
+            if (ad != null) {
+                NativeAdView(ad = ad)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             Text("Note: $detectedNote", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
             Text(text = frequencyText, fontSize = 16.sp, color = Color.LightGray, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 6f)))
             Text(text = statusText, fontSize = 20.sp, color = statusColor, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
@@ -470,4 +515,38 @@ class MainActivity : ComponentActivity() {
         val color=when{index==0->Color(0xFF00C853);abs(index)in 1..2->Color(0xFFFFFF00);else->Color(0xFFD50000)};LedIndicator(isActive=isActive,activeColor=color);if(index<5){Spacer(modifier=Modifier.width(2.dp))}}}}
     @Composable fun LedIndicator(isActive:Boolean,activeColor:Color){val color=if(isActive)activeColor else Color.DarkGray.copy(alpha=0.5f);Box(modifier=Modifier.size(width=20.dp,height=24.dp).background(color,shape=RoundedCornerShape(4.dp)).border(width=1.dp,color=Color.Black.copy(alpha=0.3f),shape=RoundedCornerShape(4.dp)))}
 
+}
+
+// --- NEW: Composable for displaying the native ad ---
+@Composable
+fun NativeAdView(ad: NativeAd) {
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        factory = { context ->
+            // Inflate the ad view from a layout resource.
+            // You need to create an `ad_unified.xml` layout file.
+            val adView = LayoutInflater.from(context)
+                .inflate(R.layout.ad_unified, null) as NativeAdView
+
+            adView
+        },
+        update = { adView ->
+            // This is where you bind the ad's assets to the views.
+            adView.headlineView = adView.findViewById(R.id.ad_headline)
+            adView.bodyView = adView.findViewById(R.id.ad_body)
+            adView.callToActionView = adView.findViewById(R.id.ad_call_to_action)
+            adView.iconView = adView.findViewById(R.id.ad_app_icon)
+
+            (adView.headlineView as? TextView)?.text = ad.headline
+            (adView.bodyView as? TextView)?.text = ad.body
+            (adView.callToActionView as? Button)?.text = ad.callToAction
+            (adView.iconView as? ImageView)?.setImageDrawable(ad.icon?.drawable)
+
+            // This method tells the Google Mobile Ads SDK that you have finished
+            // populating your native ad view with this native ad.
+            adView.setNativeAd(ad)
+        }
+    )
 }
