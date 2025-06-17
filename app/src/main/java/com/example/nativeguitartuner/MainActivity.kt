@@ -1,8 +1,5 @@
 package com.example.nativeguitartuner
-import android.view.LayoutInflater
-import android.widget.Button
-import android.widget.ImageView
-import android.widget.TextView
+
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -10,10 +7,18 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import android.os.Bundle
 import android.util.Log
+import android.view.LayoutInflater
 import android.view.WindowManager
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -37,8 +42,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -88,8 +91,9 @@ class MainActivity : ComponentActivity() {
         private const val PREF_VDU_SKIN = "vdu_skin"
     }
 
-    // --- NEW: Ad state variable ---
+    // Ad state variables
     private var nativeAd by mutableStateOf<NativeAd?>(null)
+    private var isAdVisible by mutableStateOf(false) // State for animated visibility
 
     // State Variables
     private var isRecording by mutableStateOf(false)
@@ -137,7 +141,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // --- MODIFIED: Ad initialization and loading ---
         MobileAds.initialize(this) {}
         loadAd()
 
@@ -146,11 +149,12 @@ class MainActivity : ComponentActivity() {
         selectedVDU = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
 
         // Initialize resources
+        // --- MODIFIED: Removed hendrix, stoner, and doom skins ---
         pedalImages = listOf(
-            R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj, R.drawable.doom,
-            R.drawable.dovercastle1, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
-            R.drawable.usa, R.drawable.spacerock, R.drawable.acrylic, R.drawable.horse, R.drawable.stoner, R.drawable.surf,
-            R.drawable.red, R.drawable.yellow, R.drawable.black, R.drawable.green, R.drawable.cats, R.drawable.wolf, R.drawable.sunflowers
+            R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj,
+            R.drawable.dovercastle1, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.steampunk,
+            R.drawable.usa, R.drawable.spacerock, R.drawable.acrylic, R.drawable.horse, R.drawable.surf,
+            R.drawable.red, R.drawable.yellow, R.drawable.black, R.drawable.doom , R.drawable.green, R.drawable.cats, R.drawable.wolf, R.drawable.sunflowers
         )
         vduImages = listOf(R.drawable.dial2, R.drawable.dial3, R.drawable.dial4, R.drawable.dial)
         timeSignatures = listOf("4/4", "3/4", "6/8", "2/4", "5/4")
@@ -170,12 +174,34 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         Image(painter = painterResource(id = selectedPedal), contentDescription = null, modifier = Modifier.fillMaxSize())
-                        Box(modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             MetronomeControls(enabled = soundsLoaded)
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            val ad = nativeAd
+                            if (ad != null) {
+                                AnimatedVisibility(
+                                    visible = isAdVisible,
+                                    enter = slideInVertically(
+                                        initialOffsetY = { -it / 2 },
+                                        animationSpec = tween(durationMillis = 500)
+                                    ) + fadeIn(animationSpec = tween(durationMillis = 500))
+                                ) {
+                                    NativeAdView(ad = ad)
+                                }
+                            }
                         }
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.align(Alignment.Center).offset(y = (-15).dp)
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset(y = (-15).dp)
                         ) {
                             LedTuningStrip(activeLedIndex = activeLedIndex)
                             Image(
@@ -184,13 +210,21 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.size(280.dp)
                             )
                         }
-                        Image(painter = painterResource(id = R.drawable.needle), contentDescription = null, modifier = Modifier.size(140.dp).align(Alignment.Center).offset(y = (-15).dp).graphicsLayer {
-                            rotationZ = smoothedAngle; transformOrigin = TransformOrigin(0.5f, 0.84f)
-                        })
-                        Icon(imageVector = if (voiceModeEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff, contentDescription = "Toggle Voice Feedback", tint = if (voiceModeEnabled) Color.Green else Color.Red,
-                            modifier = Modifier.padding(12.dp).size(28.dp).align(Alignment.TopStart).clickable {
-                                if (soundsLoaded) voiceModeEnabled = !voiceModeEnabled
+                        Image(painter = painterResource(id = R.drawable.needle), contentDescription = null, modifier = Modifier
+                            .size(140.dp)
+                            .align(Alignment.Center)
+                            .offset(y = (-15).dp)
+                            .graphicsLayer {
+                                rotationZ = smoothedAngle; transformOrigin = TransformOrigin(0.5f, 0.84f)
                             })
+                        Icon(imageVector = if (voiceModeEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff, contentDescription = "Toggle Voice Feedback", tint = if (voiceModeEnabled) Color.Green else Color.Red,
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .size(28.dp)
+                                .align(Alignment.TopStart)
+                                .clickable {
+                                    if (soundsLoaded) voiceModeEnabled = !voiceModeEnabled
+                                })
                         Box(modifier = Modifier.align(Alignment.BottomCenter)) {
                             BottomControls()
                         }
@@ -201,20 +235,21 @@ class MainActivity : ComponentActivity() {
         activityScope.launch { while (isActiveTuner) { delay(16); val smoothing = 0.1f; smoothedAngle += (rotationAngle - smoothedAngle) * smoothing } }
     }
 
-    // --- NEW: Function to load the ad ---
     private fun loadAd() {
         val adUnitId = getString(R.string.native_ad_unit_id)
         val adLoader = AdLoader.Builder(this, adUnitId)
             .forNativeAd { ad: NativeAd ->
-                // Ad loaded successfully, update the state
                 nativeAd = ad
-                Log.d(TAG, "Native ad loaded successfully.")
+                activityScope.launch {
+                    delay(20_000L) // Wait for 20 seconds
+                    isAdVisible = true
+                }
+                Log.d(TAG, "Native ad loaded. Will be shown in 20 seconds.")
             }
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(adError: LoadAdError) {
-                    // Handle the failure.
                     Log.e(TAG, "Ad failed to load: ${adError.message}")
-                    nativeAd = null // Clear any old ad
+                    nativeAd = null
                 }
             })
             .withNativeAdOptions(NativeAdOptions.Builder().build())
@@ -261,7 +296,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        nativeAd?.destroy() // Important: destroy the ad to free up resources
+        nativeAd?.destroy()
         soundPool.release()
         activityScope.cancel()
     }
@@ -440,13 +475,6 @@ class MainActivity : ComponentActivity() {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- NEW: Display the ad if it's loaded ---
-            val ad = nativeAd
-            if (ad != null) {
-                NativeAdView(ad = ad)
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
             Text("Note: $detectedNote", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
             Text(text = frequencyText, fontSize = 16.sp, color = Color.LightGray, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 6f)))
             Text(text = statusText, fontSize = 20.sp, color = statusColor, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
@@ -517,7 +545,6 @@ class MainActivity : ComponentActivity() {
 
 }
 
-// --- NEW: Composable for displaying the native ad ---
 @Composable
 fun NativeAdView(ad: NativeAd) {
     AndroidView(
@@ -525,15 +552,11 @@ fun NativeAdView(ad: NativeAd) {
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         factory = { context ->
-            // Inflate the ad view from a layout resource.
-            // You need to create an `ad_unified.xml` layout file.
             val adView = LayoutInflater.from(context)
                 .inflate(R.layout.ad_unified, null) as NativeAdView
-
             adView
         },
         update = { adView ->
-            // This is where you bind the ad's assets to the views.
             adView.headlineView = adView.findViewById(R.id.ad_headline)
             adView.bodyView = adView.findViewById(R.id.ad_body)
             adView.callToActionView = adView.findViewById(R.id.ad_call_to_action)
@@ -544,8 +567,6 @@ fun NativeAdView(ad: NativeAd) {
             (adView.callToActionView as? Button)?.text = ad.callToAction
             (adView.iconView as? ImageView)?.setImageDrawable(ad.icon?.drawable)
 
-            // This method tells the Google Mobile Ads SDK that you have finished
-            // populating your native ad view with this native ad.
             adView.setNativeAd(ad)
         }
     )
