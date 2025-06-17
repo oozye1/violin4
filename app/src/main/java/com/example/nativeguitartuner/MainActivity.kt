@@ -1,6 +1,7 @@
 package com.example.nativeguitartuner
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.SoundPool
@@ -53,7 +54,6 @@ import kotlinx.coroutines.*
 import kotlin.math.abs
 import kotlin.math.log2
 
-// Removed STROBE and RADIAL_BARS (assuming 'circle visualisations' refers to Radial Bars)
 enum class VisualizerMode {
     NONE, BARS, WAVEFORM
 }
@@ -70,6 +70,11 @@ class MainActivity : ComponentActivity() {
         private const val PITCH_BUFFER_SIZE = 5
         private const val IN_TUNE_DELAY_MS = 2500L
         private const val IN_TUNE_CENTS_THRESHOLD = 3.0f
+
+        // --- NEW: Constants for SharedPreferences ---
+        private const val PREFS_NAME = "TunerPrefs"
+        private const val PREF_PEDAL_SKIN = "pedal_skin"
+        private const val PREF_VDU_SKIN = "vdu_skin"
     }
 
     // State Variables
@@ -87,7 +92,6 @@ class MainActivity : ComponentActivity() {
     private var tempo by mutableStateOf(120)
     private var timeSignatureIndex by mutableStateOf(0)
     private var metronomeJob: Job? = null
-    // visualizerMode now defaults to BARS as RadialBars is removed
     private var visualizerMode by mutableStateOf(VisualizerMode.BARS)
     private var magnitudes by mutableStateOf(floatArrayOf())
     private var waveformData by mutableStateOf(floatArrayOf())
@@ -118,9 +122,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize resources
-        selectedPedal = mutableStateOf(R.drawable.red)
-        selectedVDU = mutableStateOf(R.drawable.dial)
+        // --- NEW: Load saved skins from SharedPreferences ---
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedPedalId = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.red)
+        val savedVduId = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
+
+        // Initialize resources, using the loaded values
+        selectedPedal = mutableStateOf(savedPedalId)
+        selectedVDU = mutableStateOf(savedVduId)
         pedalImages = listOf(
             R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj, R.drawable.doom,
             R.drawable.dovercastle, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.hendrix, R.drawable.steampunk,
@@ -148,21 +157,17 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp)) {
                             MetronomeControls(enabled = soundsLoaded)
                         }
-
-                        // --- MODIFIED: The spacer is removed and the offset is adjusted ---
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.align(Alignment.Center).offset(y = (-15).dp)
                         ) {
                             LedTuningStrip(activeLedIndex = activeLedIndex)
-                            // Spacer removed from here
                             Image(
                                 painter = painterResource(id = selectedVDU.value),
                                 contentDescription = null,
                                 modifier = Modifier.size(280.dp)
                             )
                         }
-
                         Image(painter = painterResource(id = R.drawable.needle), contentDescription = null, modifier = Modifier.size(140.dp).align(Alignment.Center).offset(y = (-15).dp).graphicsLayer {
                             rotationZ = smoothedAngle; transformOrigin = TransformOrigin(0.5f, 0.84f)
                         })
@@ -179,9 +184,6 @@ class MainActivity : ComponentActivity() {
         }
         activityScope.launch { while (isActiveTuner) { delay(16); val smoothing = 0.1f; smoothedAngle += (rotationAngle - smoothedAngle) * smoothing } }
     }
-
-    // I also adjusted the needle's offset to match the Column's new offset
-    // so it stays perfectly centered on the dial.
 
     private fun setupSoundPool() {
         val audioAttributes = AudioAttributes.Builder()
@@ -377,7 +379,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun getNearestNoteFrequency(pitch: Float): Pair<Float, String>? = noteFrequencies.minByOrNull { abs(pitch - it.first) }
-    private fun randomizeSkins() { val newPedal = pedalImages.random(); selectedPedal.value = newPedal; selectedVDU.value = vduImages.random() }
+
+    // --- MODIFIED: Save the new skins to SharedPreferences ---
+    private fun randomizeSkins() {
+        val newPedal = pedalImages.random()
+        val newVdu = vduImages.random()
+        selectedPedal.value = newPedal
+        selectedVDU.value = newVdu
+
+        // Save the new IDs to SharedPreferences
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt(PREF_PEDAL_SKIN, newPedal)
+            .putInt(PREF_VDU_SKIN, newVdu)
+            .apply()
+    }
 
     @Composable
     fun BottomControls() {
@@ -421,7 +437,6 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable fun AudioVisualizer(){Column(horizontalAlignment=Alignment.CenterHorizontally){Box(modifier=Modifier.fillMaxWidth(0.9f).height(80.dp).background(Color.Black.copy(alpha=0.6f),RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).padding(8.dp),contentAlignment=Alignment.Center){
-        // Removed STROBE and RADIAL_BARS from the when statement
         when(visualizerMode){
             VisualizerMode.BARS->BarsVisualizer(Modifier.fillMaxSize(),magnitudes)
             VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(),waveformData)
@@ -430,8 +445,6 @@ class MainActivity : ComponentActivity() {
     };Spacer(Modifier.height(8.dp));Button(onClick={val allModes=VisualizerMode.entries;val currentIndex=allModes.indexOf(visualizerMode);val nextIndex=(currentIndex+1)%allModes.size;visualizerMode=allModes[nextIndex]}){val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()};Text("Visualizer: $vizName")}}}
     @Composable fun BarsVisualizer(modifier:Modifier=Modifier,magnitudes:FloatArray){Canvas(modifier=modifier){if(magnitudes.isNotEmpty()){val barCount=magnitudes.size/2;val barWidth=size.width/barCount;val maxMagnitude=(magnitudes.maxOrNull()?:1f).coerceAtLeast(0.5f);magnitudes.take(barCount).forEachIndexed{index,mag->val normalizedHeight=(mag/maxMagnitude).coerceIn(0f,1f);val barHeight=normalizedHeight*size.height;val color=lerp(Color.Green,Color.Red,normalizedHeight);drawRect(color=color,topLeft=Offset(x=index*barWidth,y=size.height-barHeight),size=Size(width=barWidth*0.8f,height=barHeight))}}}}
     @Composable fun WaveformVisualizer(modifier:Modifier=Modifier,data:FloatArray){Canvas(modifier=modifier){if(data.isNotEmpty()){val path=Path();val stepX=size.width/data.size;path.moveTo(0f,size.height/2);data.forEachIndexed{index,value->path.lineTo(index*stepX,(size.height/2)*(1-value))};drawPath(path=path,color=Color.Green,style=Stroke(width=2f))}}}
-    // Removed @Composable fun RadialBarsVisualizer(...)
-    // Removed @Composable fun StrobeVisualizer(...)
     @Composable fun LedTuningStrip(activeLedIndex:Int){Row(modifier=Modifier.shadow(elevation=8.dp,shape=RoundedCornerShape(6.dp),spotColor=Color.Green),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){(-5..5).forEach{index->val isActive=when{activeLedIndex<0->index>=activeLedIndex&&index<0;activeLedIndex>0->index<=activeLedIndex&&index>0;else->index==0};val color=when{index==0->Color(0xFF00C853);abs(index)in 1..2->Color(0xFFFFFF00);else->Color(0xFFD50000)};LedIndicator(isActive=isActive,activeColor=color);if(index<5){Spacer(modifier=Modifier.width(2.dp))}}}}
     @Composable fun LedIndicator(isActive:Boolean,activeColor:Color){val color=if(isActive)activeColor else Color.DarkGray.copy(alpha=0.5f);Box(modifier=Modifier.size(width=20.dp,height=24.dp).background(color,shape=RoundedCornerShape(4.dp)).border(width=1.dp,color=Color.Black.copy(alpha=0.3f),shape=RoundedCornerShape(4.dp)))}
 
