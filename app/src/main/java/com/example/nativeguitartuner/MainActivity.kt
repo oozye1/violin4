@@ -89,11 +89,14 @@ class MainActivity : ComponentActivity() {
         private const val PREFS_NAME = "TunerPrefs"
         private const val PREF_PEDAL_SKIN = "pedal_skin"
         private const val PREF_VDU_SKIN = "vdu_skin"
+
+        // Maximum size of the scrolling waveform buffer to prevent memory issues
+        private const val SCROLLING_WAVEFORM_MAX_SIZE = 16384 // approx. 4 screen widths
     }
 
     // Ad state variables
     private var nativeAd by mutableStateOf<NativeAd?>(null)
-    private var isAdVisible by mutableStateOf(false) // State for animated visibility
+    private var isAdVisible by mutableStateOf(false)
 
     // State Variables
     private var isRecording by mutableStateOf(false)
@@ -110,13 +113,15 @@ class MainActivity : ComponentActivity() {
     private var tempo by mutableIntStateOf(120)
     private var timeSignatureIndex by mutableIntStateOf(0)
     private var metronomeJob: Job? = null
-    private var visualizerMode by mutableStateOf(VisualizerMode.BARS)
+    private var visualizerMode by mutableStateOf(VisualizerMode.WAVEFORM)
     private var magnitudes by mutableStateOf(floatArrayOf())
-    private var waveformData by mutableStateOf(floatArrayOf())
+
+    // A persistent, accumulating buffer for the scrolling waveform visualizer
+    private var scrollingWaveformData by mutableStateOf<List<Float>>(emptyList())
+
     private var soundsLoaded by mutableStateOf(false)
     private var selectedPedal by mutableIntStateOf(R.drawable.red)
     private var selectedVDU by mutableIntStateOf(R.drawable.dial)
-
 
     // Audio Processing and System
     private var dispatcher: AudioDispatcher? = null
@@ -148,8 +153,6 @@ class MainActivity : ComponentActivity() {
         selectedPedal = prefs.getInt(PREF_PEDAL_SKIN, R.drawable.dovercastle1)
         selectedVDU = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
 
-        // Initialize resources
-        // --- MODIFIED: Removed hendrix, stoner, and doom skins ---
         pedalImages = listOf(
             R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj,
             R.drawable.dovercastle1, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.steampunk,
@@ -241,10 +244,10 @@ class MainActivity : ComponentActivity() {
             .forNativeAd { ad: NativeAd ->
                 nativeAd = ad
                 activityScope.launch {
-                    delay(20_000L) // Wait for 20 seconds
+                    delay(60_000L) // Wait for 1 minute
                     isAdVisible = true
                 }
-                Log.d(TAG, "Native ad loaded. Will be shown in 20 seconds.")
+                Log.d(TAG, "Native ad loaded. Will be shown in 1 minute.")
             }
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(adError: LoadAdError) {
@@ -339,13 +342,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val pitchProcessor = PitchProcessor(PitchProcessor.PitchEstimationAlgorithm.YIN, SAMPLE_RATE.toFloat(), AUDIO_BUFFER_SIZE, pitchDetectionHandler)
-            val fftSize = 1024
-            val fftProcessor = object: AudioProcessor {
-                var fft = FFT(fftSize)
-                private val amplitudes = FloatArray(fftSize)
+
+            // A combined processor for both FFT (Bars) and Waveform data
+            val processingProcessor = object: AudioProcessor {
+                var fft = FFT(AUDIO_BUFFER_SIZE)
+                private val amplitudes = FloatArray(AUDIO_BUFFER_SIZE) // Use a full-size buffer for modulus
                 override fun process(audioEvent: AudioEvent): Boolean {
-                    val audioBuffer = audioEvent.floatBuffer; val waveformUpdate = audioBuffer.clone(); val transformBuffer = audioBuffer.clone(); fft.forwardTransform(transformBuffer); fft.modulus(transformBuffer, amplitudes)
-                    activityScope.launch { waveformData = waveformUpdate; val newMagnitudes = amplitudes.copyOf(fftSize / 2); magnitudes = newMagnitudes }
+                    val audioBuffer = audioEvent.floatBuffer.clone()
+
+                    // Update UI from the main thread
+                    activityScope.launch {
+                        // 1. Handle magnitudes for BarsVisualizer
+                        val transformBuffer = audioBuffer.clone()
+                        fft.forwardTransform(transformBuffer)
+                        // Use a correctly-sized destination for modulus
+                        val magnitudesDest = FloatArray(transformBuffer.size / 2)
+                        fft.modulus(transformBuffer, magnitudesDest)
+                        magnitudes = magnitudesDest
+
+                        // 2. Add new data to scrolling buffer and trim it
+                        val newList = scrollingWaveformData.toMutableList()
+                        newList.addAll(audioBuffer.toList())
+                        while (newList.size > SCROLLING_WAVEFORM_MAX_SIZE) {
+                            newList.removeAt(0)
+                        }
+                        scrollingWaveformData = newList
+                    }
                     return true
                 }
                 override fun processingFinished() {}
@@ -353,7 +375,7 @@ class MainActivity : ComponentActivity() {
             dispatcher?.addAudioProcessor(HighPass(60f, SAMPLE_RATE.toFloat()))
             dispatcher?.addAudioProcessor(LowPassFS(1500f, SAMPLE_RATE.toFloat()))
             dispatcher?.addAudioProcessor(pitchProcessor)
-            dispatcher?.addAudioProcessor(fftProcessor)
+            dispatcher?.addAudioProcessor(processingProcessor)
 
             audioThread = Thread(dispatcher, "AudioDispatcherThread").apply { isDaemon = true; start() }
             isRecording = true
@@ -381,8 +403,9 @@ class MainActivity : ComponentActivity() {
         frequencyText = "0.00 Hz"
         statusText = "Press Start to Tune"
         statusColor = Color.White
-        waveformData = floatArrayOf()
         magnitudes = floatArrayOf()
+        // Clear the scrolling buffer
+        scrollingWaveformData = emptyList()
     }
 
     private fun updatePitch(pitch: Float) {
@@ -484,19 +507,13 @@ class MainActivity : ComponentActivity() {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = { if (isRecording) stopTuner() else requestPermissionAndStartTuner() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Black,
-                        contentColor = Color.White
-                    )
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)
                 ) {
                     Text(if (isRecording) "Stop" else "Start")
                 }
                 Button(
                     onClick = { randomizeSkins() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Black,
-                        contentColor = Color.White
-                    )
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)
                 ) {
                     Text("Skin")
                 }
@@ -525,15 +542,122 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable fun AudioVisualizer(){Column(horizontalAlignment=Alignment.CenterHorizontally){Box(modifier=Modifier.fillMaxWidth(0.9f).height(80.dp).background(Color.Black.copy(alpha=0.6f),RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).padding(8.dp),contentAlignment=Alignment.Center){
-        when(visualizerMode){
-            VisualizerMode.BARS->BarsVisualizer(Modifier.fillMaxSize(),magnitudes)
-            VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(),waveformData)
-            VisualizerMode.NONE->{Text("No Visualizer",color=Color.Gray,fontSize=12.sp)}
+    @Composable
+    fun AudioVisualizer(){
+        Column(horizontalAlignment=Alignment.CenterHorizontally){
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(80.dp)
+                    .background(Color.Black.copy(alpha=0.6f), RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(8.dp))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ){
+                when(visualizerMode){
+                    VisualizerMode.BARS->BarsVisualizer(Modifier.fillMaxSize(), magnitudes)
+                    VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(), scrollingWaveformData)
+                    VisualizerMode.NONE->{Text("No Visualizer", color=Color.Gray, fontSize=12.sp)}
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick={
+                val allModes=VisualizerMode.entries
+                val currentIndex=allModes.indexOf(visualizerMode)
+                val nextIndex=(currentIndex+1)%allModes.size
+                visualizerMode=allModes[nextIndex]
+            }, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White))
+            {
+                val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()}
+                Text("Visualizer: $vizName")
+            }
         }
-    };Spacer(Modifier.height(8.dp));Button(onClick={val allModes=VisualizerMode.entries;val currentIndex=allModes.indexOf(visualizerMode);val nextIndex=(currentIndex+1)%allModes.size;visualizerMode=allModes[nextIndex]}, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)){val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()};Text("Visualizer: $vizName")}}}
-    @Composable fun BarsVisualizer(modifier:Modifier=Modifier,magnitudes:FloatArray){Canvas(modifier=modifier){if(magnitudes.isNotEmpty()){val barCount=magnitudes.size/2;val barWidth=size.width/barCount;val maxMagnitude=(magnitudes.maxOrNull()?:1f).coerceAtLeast(0.5f);magnitudes.take(barCount).forEachIndexed{index,mag->val normalizedHeight=(mag/maxMagnitude).coerceIn(0f,1f);val barHeight=normalizedHeight*size.height;val color=lerp(Color.Green,Color.Red,normalizedHeight);drawRect(color=color,topLeft=Offset(x=index*barWidth,y=size.height-barHeight),size=Size(width=barWidth*0.8f,height=barHeight))}}}}
-    @Composable fun WaveformVisualizer(modifier:Modifier=Modifier,data:FloatArray){Canvas(modifier=modifier){if(data.isNotEmpty()){val path=Path();val stepX=size.width/data.size;path.moveTo(0f,size.height/2);data.forEachIndexed{index,value->path.lineTo(index*stepX,(size.height/2)*(1-value))};drawPath(path=path,color=Color.Green,style=Stroke(width=2f))}}}
+    }
+
+    @Composable
+    fun BarsVisualizer(modifier: Modifier = Modifier, magnitudes: FloatArray) {
+        Canvas(modifier = modifier) {
+            if (magnitudes.isNotEmpty()) {
+                val barCount = 64 // Use a fixed number of bars for a "fatter" look
+                if (barCount == 0) return@Canvas
+                val barWidth = size.width / barCount
+                val barSpacing = 1.dp.toPx() // A thin 1dp separator between bars
+
+                val relevantMagnitudes = magnitudes.take(barCount)
+                // Use a higher coerceAtLeast to prevent small noises from maxing out the visualizer
+                val maxMagnitude = (relevantMagnitudes.maxOrNull() ?: 1f).coerceAtLeast(1.0f)
+
+                relevantMagnitudes.forEachIndexed { index, mag ->
+                    val normalizedHeight = (mag / maxMagnitude).coerceIn(0f, 1f)
+                    val barHeight = normalizedHeight * size.height
+                    val color = lerp(Color.Green, Color.Red, normalizedHeight)
+
+                    drawRect(
+                        color = color,
+                        topLeft = Offset(
+                            x = index * barWidth,
+                            y = size.height - barHeight
+                        ),
+                        size = Size(width = (barWidth - barSpacing).coerceAtLeast(0f), height = barHeight)
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun WaveformVisualizer(modifier: Modifier = Modifier, fullData: List<Float>) {
+        Canvas(modifier = modifier) {
+            // How many data points to show on screen at once. A higher number is more detailed.
+            val samplesToDisplay = 4096
+            if (fullData.isEmpty()) return@Canvas
+
+            // Take only the last 'n' samples from our buffer to create the scrolling effect.
+            val waveformSlice = fullData.takeLast(samplesToDisplay)
+
+            // If our buffer is not yet full, pad the start with zeros (silence). This
+            // makes the waveform appear to scroll in from the right edge of the screen.
+            val displayData = if (waveformSlice.size < samplesToDisplay) {
+                List(samplesToDisplay - waveformSlice.size) { 0f } + waveformSlice
+            } else {
+                waveformSlice
+            }
+
+            val stepX = size.width / displayData.size
+            val centerY = size.height / 2f
+            val waveColor = Color(0xFF4CAF50)
+            val centerLineColor = Color.Black.copy(alpha = 0.3f)
+
+            val topPath = Path().apply {
+                moveTo(0f, centerY)
+                displayData.forEachIndexed { index, value ->
+                    lineTo(index * stepX, centerY - (value.coerceAtLeast(0f) * centerY))
+                }
+                lineTo(size.width, centerY)
+                close()
+            }
+
+            val bottomPath = Path().apply {
+                moveTo(0f, centerY)
+                displayData.forEachIndexed { index, value ->
+                    lineTo(index * stepX, centerY - (value.coerceAtMost(0f) * centerY))
+                }
+                lineTo(size.width, centerY)
+                close()
+            }
+
+            drawPath(path = topPath, color = waveColor)
+            drawPath(path = bottomPath, color = waveColor)
+
+            drawLine(
+                color = centerLineColor,
+                start = Offset(0f, centerY),
+                end = Offset(size.width, centerY),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
+    }
+
     @Composable fun LedTuningStrip(activeLedIndex:Int){Row(modifier=Modifier.shadow(elevation=8.dp,shape=RoundedCornerShape(6.dp),spotColor=Color.Green),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){(-5..5).forEach{index->
         val isActive = when {
             activeLedIndex < 0 -> index in activeLedIndex until 0
@@ -542,7 +666,6 @@ class MainActivity : ComponentActivity() {
         }
         val color=when{index==0->Color(0xFF00C853);abs(index)in 1..2->Color(0xFFFFFF00);else->Color(0xFFD50000)};LedIndicator(isActive=isActive,activeColor=color);if(index<5){Spacer(modifier=Modifier.width(2.dp))}}}}
     @Composable fun LedIndicator(isActive:Boolean,activeColor:Color){val color=if(isActive)activeColor else Color.DarkGray.copy(alpha=0.5f);Box(modifier=Modifier.size(width=20.dp,height=24.dp).background(color,shape=RoundedCornerShape(4.dp)).border(width=1.dp,color=Color.Black.copy(alpha=0.3f),shape=RoundedCornerShape(4.dp)))}
-
 }
 
 @Composable
