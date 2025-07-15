@@ -155,10 +155,8 @@ class MainActivity : ComponentActivity() {
         selectedVDU = prefs.getInt(PREF_VDU_SKIN, R.drawable.dial)
 
         pedalImages = listOf(
-            R.drawable.vintage_drive_pedal, R.drawable.blue_delay_pedal, R.drawable.wood, R.drawable.wood2, R.drawable.punk, R.drawable.taj,
-            R.drawable.dovercastle1, R.drawable.gothic, R.drawable.alien, R.drawable.cyber, R.drawable.graffiti, R.drawable.steampunk,
-            R.drawable.usa, R.drawable.spacerock, R.drawable.acrylic, R.drawable.horse, R.drawable.surf,
-            R.drawable.red, R.drawable.yellow, R.drawable.black, R.drawable.doom , R.drawable.green, R.drawable.cats, R.drawable.wolf, R.drawable.sunflowers
+            R.drawable.violin1, R.drawable.violin2, R.drawable.violin3, R.drawable.violin4, R.drawable.violin5, R.drawable.violin6,
+            R.drawable.violin7, R.drawable.violin8, R.drawable.violin9, R.drawable.violin10
         )
         vduImages = listOf(R.drawable.dial2, R.drawable.dial3, R.drawable.dial4, R.drawable.dial)
         timeSignatures = listOf("4/4", "3/4", "6/8", "2/4", "5/4")
