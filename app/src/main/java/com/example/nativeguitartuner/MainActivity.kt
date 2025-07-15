@@ -42,7 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale // <<<--- IMPORT ADDED HERE
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -122,7 +122,8 @@ class MainActivity : ComponentActivity() {
     private var scrollingWaveformData by mutableStateOf<List<Float>>(emptyList())
 
     private var soundsLoaded by mutableStateOf(false)
-    private var selectedPedal by mutableIntStateOf(R.drawable.red)
+    // <<<--- CRASH FIX IS HERE ---<<<
+    private var selectedPedal by mutableIntStateOf(R.drawable.violin2) // Changed R.drawable.red to a valid drawable
     private var selectedVDU by mutableIntStateOf(R.drawable.dial)
 
     // Audio Processing and System
@@ -161,7 +162,7 @@ class MainActivity : ComponentActivity() {
         )
         vduImages = listOf(R.drawable.dial2, R.drawable.dial3, R.drawable.dial3, R.drawable.dial4)
         timeSignatures = listOf("4/4", "3/4", "6/8", "2/4", "5/4")
-        noteFrequencies = listOf(82.41f to "E2", 110.00f to "A2", 146.83f to "D3", 196.00f to "G3", 246.94f to "B3", 329.63f to "E4")
+        noteFrequencies = listOf(196.00f to "G3", 293.66f to "D4", 440.00f to "A4", 659.25f to "E5")
 
         setupSoundPool()
 
@@ -180,7 +181,7 @@ class MainActivity : ComponentActivity() {
                             painter = painterResource(id = selectedPedal),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop // <<<--- FIX IS HERE
+                            contentScale = ContentScale.Crop
                         )
                         Column(
                             modifier = Modifier
