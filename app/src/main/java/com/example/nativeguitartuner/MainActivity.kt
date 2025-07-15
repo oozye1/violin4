@@ -158,7 +158,7 @@ class MainActivity : ComponentActivity() {
             R.drawable.violin1, R.drawable.violin2, R.drawable.violin3, R.drawable.violin4, R.drawable.violin5, R.drawable.violin6,
             R.drawable.violin7, R.drawable.violin8, R.drawable.violin9, R.drawable.violin10
         )
-        vduImages = listOf(R.drawable.dial2, R.drawable.dial3, R.drawable.dial4, R.drawable.dial)
+        vduImages = listOf(R.drawable.dial2, R.drawable.dial3, R.drawable.dial3, R.drawable.dial4)
         timeSignatures = listOf("4/4", "3/4", "6/8", "2/4", "5/4")
         noteFrequencies = listOf(82.41f to "E2", 110.00f to "A2", 146.83f to "D3", 196.00f to "G3", 246.94f to "B3", 329.63f to "E4")
 
