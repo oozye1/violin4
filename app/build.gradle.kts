@@ -7,15 +7,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nativeguitartuner" // Your package name
-    compileSdk = 34 // Or your project's compileSdk
+    namespace = "co.uk.doverguitarteacher.voiceguitartuner" // Your package name
+    compileSdk = 35 // Or your project's compileSdk
 
     defaultConfig {
-        applicationId = "com.example.nativeguitartuner" // Your package name
-        minSdk = 23 // Or your project's minSdk
-        targetSdk = 34 // Or your project's targetSdk
-        versionCode = 1
-        versionName = "1.0"
+        applicationId = "co.uk.doverguitarteacher.voiceguitartuner" // Your package name
+        minSdk = 24 // Or your project's minSdk
+        targetSdk = 35 // Or your project's targetSdk
+        versionCode = 9
+        versionName = "1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -25,7 +25,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+
+            // Enables resource shrinking.
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -57,31 +60,30 @@ android {
 dependencies {
     implementation("com.google.android.gms:play-services-ads:24.4.0")
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2") // For CoroutineScope tied to lifecycle
-    implementation("androidx.activity:activity-compose:1.8.2") // For setContent
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
 
-    // Jetpack Compose BOM (Bill of Materials) - manages versions for Compose libraries
-    implementation(platform("androidx.compose:compose-bom:2023.10.01")) // Check for latest BOM
+    // Jetpack Compose BOM (Bill of Materials) - Let this manage versions
+    implementation(platform("androidx.compose:compose-bom:2023.10.01")) // Use platform() for BOM
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3") // Or material if you prefer Material 2
-    implementation(files("libs/TarsosDSP.jar"))
-
+    implementation("androidx.compose.material3:material3-window-size-class")
+    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui:1.5.0")
-    implementation("androidx.compose.material:material:1.5.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.5.0")
-    implementation("androidx.activity:activity-compose:1.7.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.activity:activity-compose") // No version needed
 
-// Optional - helps with CoroutineScope
+    // Your other dependencies
+    implementation(files("libs/TarsosDSP.jar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // Test dependencies
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01")) // For Compose UI tests
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0") // Aligned version
+    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01")) // BOM for tests
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+
+    // Debug dependencies
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

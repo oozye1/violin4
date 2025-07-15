@@ -1,4 +1,4 @@
-package com.example.nativeguitartuner
+package co.uk.doverguitarteacher.voiceguitartuner
 
 import android.Manifest
 import android.content.Context
@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -184,20 +185,22 @@ class MainActivity : ComponentActivity() {
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             MetronomeControls(enabled = soundsLoaded)
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            val ad = nativeAd
-                            if (ad != null) {
-                                AnimatedVisibility(
-                                    visible = isAdVisible,
-                                    enter = slideInVertically(
-                                        initialOffsetY = { -it / 2 },
-                                        animationSpec = tween(durationMillis = 500)
-                                    ) + fadeIn(animationSpec = tween(durationMillis = 500))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            // Row for all top buttons
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = { if (isRecording) stopTuner() else requestPermissionAndStartTuner() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)
                                 ) {
-                                    NativeAdView(ad = ad)
+                                    Text(if (isRecording) "Stop" else "Start")
                                 }
+                                Button(
+                                    onClick = { randomizeSkins() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)
+                                ) {
+                                    Text("Skin")
+                                }
+                                VisualizerToggleButton() // Button moved here
                             }
                         }
                         Column(
@@ -210,7 +213,7 @@ class MainActivity : ComponentActivity() {
                             Image(
                                 painter = painterResource(id = selectedVDU),
                                 contentDescription = null,
-                                modifier = Modifier.size(280.dp)
+                                modifier = Modifier.size(240.dp)
                             )
                         }
                         Image(painter = painterResource(id = R.drawable.needle), contentDescription = null, modifier = Modifier
@@ -243,11 +246,8 @@ class MainActivity : ComponentActivity() {
         val adLoader = AdLoader.Builder(this, adUnitId)
             .forNativeAd { ad: NativeAd ->
                 nativeAd = ad
-                activityScope.launch {
-                    delay(60_000L) // Wait for 1 minute
-                    isAdVisible = true
-                }
-                Log.d(TAG, "Native ad loaded. Will be shown in 1 minute.")
+                isAdVisible = true
+                Log.d(TAG, "Native ad loaded. Will be shown immediately.")
             }
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(adError: LoadAdError) {
@@ -498,24 +498,55 @@ class MainActivity : ComponentActivity() {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Note: $detectedNote", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
-            Text(text = frequencyText, fontSize = 16.sp, color = Color.LightGray, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 6f)))
-            Text(text = statusText, fontSize = 20.sp, color = statusColor, style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)))
+            // Visualizer display moved here
+            VisualizerDisplay()
             Spacer(modifier = Modifier.height(16.dp))
-            AudioVisualizer()
+
+            // Combined Note, Frequency, and Status into one Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Note: $detectedNote",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = frequencyText,
+                    fontSize = 14.sp,
+                    color = Color.LightGray,
+                    style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 6f)),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = statusText,
+                    fontSize = 16.sp,
+                    color = statusColor,
+                    style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black, blurRadius = 8f)),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(
-                    onClick = { if (isRecording) stopTuner() else requestPermissionAndStartTuner() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)
+
+            // Add the Native Ad here, at the bottom of the BottomControls column
+            val ad = nativeAd
+            if (ad != null) {
+                AnimatedVisibility(
+                    visible = isAdVisible,
+                    enter = slideInVertically(
+                        initialOffsetY = { it / 2 },
+                        animationSpec = tween(durationMillis = 500)
+                    ) + fadeIn(animationSpec = tween(durationMillis = 500))
                 ) {
-                    Text(if (isRecording) "Stop" else "Start")
-                }
-                Button(
-                    onClick = { randomizeSkins() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White)
-                ) {
-                    Text("Skin")
+                    NativeAdView(ad = ad)
                 }
             }
         }
@@ -536,43 +567,52 @@ class MainActivity : ComponentActivity() {
                 IconButton(onClick={timeSignatureIndex=(timeSignatureIndex+1)%timeSignatures.size}, enabled=enabled){Icon(Icons.Default.KeyboardArrowRight,"",tint=Color.White)}
                 Spacer(modifier=Modifier.width(8.dp))
                 Button(onClick={if(isMetronomeRunning)stopMetronome()else startMetronome()}, enabled=enabled, modifier=Modifier.fillMaxHeight(0.75f),contentPadding=PaddingValues(horizontal=10.dp),colors=ButtonDefaults.buttonColors(containerColor=if(isMetronomeRunning)Color(0xFFE53935)else Color(0xFF43A047))){
-                    Text(if(isMetronomeRunning)"Stop" else "Start",fontSize=12.sp)
+                    // Text removed as requested
                 }
             }
         }
     }
 
+    // This composable is now just the button
     @Composable
-    fun AudioVisualizer(){
-        Column(horizontalAlignment=Alignment.CenterHorizontally){
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .height(80.dp)
-                    .background(Color.Black.copy(alpha=0.6f), RoundedCornerShape(8.dp))
-                    .clip(RoundedCornerShape(8.dp))
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ){
-                when(visualizerMode){
-                    VisualizerMode.BARS->BarsVisualizer(Modifier.fillMaxSize(), magnitudes)
-                    VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(), scrollingWaveformData)
-                    VisualizerMode.NONE->{Text("No Visualizer", color=Color.Gray, fontSize=12.sp)}
-                }
+    fun VisualizerToggleButton() {
+        Button(onClick={
+            val allModes=VisualizerMode.entries
+            val currentIndex=allModes.indexOf(visualizerMode)
+            val nextIndex=(currentIndex+1)%allModes.size
+            visualizerMode=allModes[nextIndex]
+        }, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White))
+        {
+            // Shorten "Waveform" to "Wave" to prevent UI breaking
+            val vizName = if (visualizerMode == VisualizerMode.WAVEFORM) {
+                "Wave"
+            } else {
+                visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()}
             }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick={
-                val allModes=VisualizerMode.entries
-                val currentIndex=allModes.indexOf(visualizerMode)
-                val nextIndex=(currentIndex+1)%allModes.size
-                visualizerMode=allModes[nextIndex]
-            }, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White))
-            {
-                val vizName=visualizerMode.name.replace('_',' ').lowercase().replaceFirstChar{if(it.isLowerCase())it.titlecase()else it.toString()}
-                Text("Visualizer: $vizName")
+            Text("Visualizer: $vizName")
+        }
+    }
+
+    // This new composable is just the display part
+    @Composable
+    fun VisualizerDisplay() {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .height(80.dp)
+                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(8.dp))
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ){
+            when(visualizerMode){
+                VisualizerMode.BARS->BarsVisualizer(Modifier.fillMaxSize(), magnitudes)
+                VisualizerMode.WAVEFORM->WaveformVisualizer(Modifier.fillMaxSize(), scrollingWaveformData)
+                VisualizerMode.NONE->{Text("No Visualizer", color=Color.Gray, fontSize=12.sp)}
             }
         }
     }
+
 
     @Composable
     fun BarsVisualizer(modifier: Modifier = Modifier, magnitudes: FloatArray) {
