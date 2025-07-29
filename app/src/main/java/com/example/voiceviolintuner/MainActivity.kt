@@ -1,4 +1,4 @@
-package co.uk.doverguitarteacher.voiceguitartuner
+package co.uk.doverguitarteacher.voiceviolintuner
 
 import android.Manifest
 import android.content.Context
